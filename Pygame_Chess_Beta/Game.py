@@ -12,7 +12,7 @@ class Game:
         self.game_display = pygame.display.set_mode((600, 600))
         pygame.display.set_caption('Chess')
 
-        self.settings = {'board_image': 'images/orange_board.png'}
+        self.settings = {'board_image': 'images/board.png'}
         self.board_image = pygame.image.load(self.settings['board_image'])
 
         self.clock = pygame.time.Clock()

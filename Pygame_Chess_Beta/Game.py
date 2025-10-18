@@ -9,7 +9,7 @@ from ChessBoard import ChessBoard
 class Game:
     def __init__(self):
         pygame.init()
-        self.game_display = pygame.display.set_mode((900, 650))
+        self.game_display = pygame.display.set_mode((600, 600))
         pygame.display.set_caption('Chess')
 
         self.settings = {'board_image': 'images/orange_board.png'}
@@ -48,47 +48,9 @@ class Game:
     def draw_window(self):
         """Draws everything in the window"""
         self.game_display.fill(white)
-        # Draw side menu
-        self.draw_side_menu()
-        # Draw bottom menu
         # Draw board
         self.draw_board()
         pygame.display.update()
-
-    def draw_side_menu(self):
-        """Draws right side menu"""
-        pygame.draw.rect(self.game_display, black, Rect((650, 100), (200, 400)), 5)
-
-        # Draw box around current player
-        if self.chess_board.curr_player == 'b':
-            pygame.draw.rect(self.game_display, blue, Rect((700, 25), (100, 50)), 5)
-        else:
-            pygame.draw.rect(self.game_display, blue, Rect((700, 525), (100, 50)), 5)
-
-        self.message_display('Black', (750, 50), fontsize=30)
-        self.message_display('White', (750, 550), fontsize=30)
-
-        # Display all moves played
-        start = 0
-        if len(self.get_all_played_moves()) > 10:
-            start = len(self.get_all_played_moves()) - 10
-        for i, move in enumerate(self.get_all_played_moves()[start:]):
-            self.message_display(move, (740, 125 + (i * 30)), fontsize=20)
-            start += 1
-
-        # Display all black pieces taken
-        for i, image in enumerate(self.black_pieces_taken_images):
-            image = pygame.image.load(image)
-            image = pygame.transform.scale(image, (30, 30))
-            pos = 610 + i * 20, 5
-            self.game_display.blit(image, pos)
-
-        # Display all white pieces taken
-        for i, image in enumerate(self.white_pieces_taken_images):
-            image = pygame.image.load(image)
-            image = pygame.transform.scale(image, (30, 30))
-            pos = 610 + i * 20, 595
-            self.game_display.blit(image, pos)
 
     def draw_board(self):
         """Draw chess board and all pieces on the board"""
@@ -156,7 +118,7 @@ class Game:
                         self.add_move(self.curr_selected_piece.position, selected_space)
                         self.move_piece(self.curr_selected_piece, selected_space)
 
-                        if self.curr_selected_piece.name == 'Pawn' and selected_space[1] == 0 or selected_space[1] == 7:
+                        if self.curr_selected_piece.name == 'Pawn' and (selected_space[1] == 0 or selected_space[1] == 7):
                             self.chess_board.board[selected_space[0]][selected_space[1]] = None
                             self.chess_board.board[selected_space[0]][selected_space[1]] = Queen(self.chess_board.curr_player, selected_space)
 
@@ -173,9 +135,9 @@ class Game:
                             checkmate = False
                     if checkmate:
                         self.draw_window()
-                        self.message_display('Checkmate!', (400, 300))
+                        self.message_display('Checkmate!', (300, 300))
                         winner = 'White' if self.chess_board.curr_player == 'b' else 'Black'
-                        self.message_display('%s wins!' % winner, (400, 400))
+                        self.message_display('%s wins!' % winner, (300, 400))
                         pygame.display.update()
                         time.sleep(2)
                         quit()
@@ -272,7 +234,7 @@ class Game:
 
 if __name__ == '__main__':
 
-    white = (255,255,255)
+    white = (232, 230, 202)
     blue = (34, 0, 255)
     red = (209, 9, 9)
     black = (0, 0, 0)

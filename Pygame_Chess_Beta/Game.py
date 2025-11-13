@@ -34,9 +34,16 @@ class Game:
             # Draw whole window (and draw board)
             self.draw_window()
 
+            #pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     quit()
+
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        command_move = input('Введите команду:')
+                        self.get_valid_command(command_move)
 
                 if event.type == pygame.MOUSEBUTTONUP:
                     # Get user click
@@ -74,6 +81,53 @@ class Game:
             for move in self.curr_poss_moves:
                 box1_x, box1_y = self.convert_space_to_coordinates(move)
                 pygame.draw.rect(self.game_display, red, Rect((box1_x, box1_y), (75, 75)), 5)
+
+    def get_valid_command(self, command): # command = "3 1,3 3"
+        square_piece_from = tuple(map(lambda x: int(x), command.split(',')[0].split())) # [3, 1]
+        square_piece_to = tuple(map(lambda x: int(x), command.split(',')[1].split()))
+        print(square_piece_from, square_piece_to)
+        if self.is_piece_of_curr_player(square_piece_from):
+            poss_moves = self.all_poss_moves[square_piece_from]
+            self.new_piece_selected(square_piece_from)
+            if square_piece_to in poss_moves:
+                #### Check if piece is a king!!! ###
+                # Check if selected space is king and in poss_castle_move
+                if self.curr_selected_piece.name == 'King' and square_piece_to in self.chess_board.get_castle_moves_for_curr_player():
+                    # Castle that king
+                    self.add_move(self.curr_selected_piece.position, square_piece_to)
+                    self.chess_board.castle_king(self.curr_selected_piece, square_piece_to)
+                else:
+                    # Move selected piece to this spot
+                    self.add_move(self.curr_selected_piece.position, square_piece_to)
+                    self.move_piece(self.curr_selected_piece, square_piece_to)
+
+                    if self.curr_selected_piece.name == 'Pawn' and (square_piece_to[1] == 0 or square_piece_to[1] == 7):
+                        self.chess_board.board[square_piece_to[0]][square_piece_to[1]] = None
+                        self.chess_board.board[square_piece_to[0]][square_piece_to[1]] = Queen(self.chess_board.curr_player, square_piece_to)
+
+                # Deselect current piece and remove poss moves
+                self.deselect_piece()
+                # Change current player
+                self.change_curr_player()
+
+                # Check for checkmate and get new list of all possible moves
+                self.all_poss_moves = self.get_all_poss_moves()
+                checkmate = True
+                for piece_pos in self.all_poss_moves:
+                    if len(self.all_poss_moves[piece_pos]) != 0:
+                        checkmate = False
+                if checkmate:
+                    self.draw_window()
+                    self.message_display('Checkmate!', (300, 300))
+                    winner = 'White' if self.chess_board.curr_player == 'b' else 'Black'
+                    self.message_display('%s wins!' % winner, (300, 400))
+                    pygame.display.update()
+                    time.sleep(5)
+                    quit()
+        else:
+            # Deselect current move
+            self.deselect_piece()
+
 
     def get_user_click(self):
         """Analyze the position clicked by the user."""
@@ -139,7 +193,7 @@ class Game:
                         winner = 'White' if self.chess_board.curr_player == 'b' else 'Black'
                         self.message_display('%s wins!' % winner, (300, 400))
                         pygame.display.update()
-                        time.sleep(2)
+                        time.sleep(5)
                         quit()
 
                 # Else if another piece of curr player:

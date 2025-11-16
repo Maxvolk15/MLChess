@@ -2,89 +2,12 @@ import pygame
 from pygame.locals import *
 import time
 from pieces.Queen import Queen
+
 from ChessBoard import ChessBoard
-import torch
-import numpy as np
 
-class ChessNet(torch.nn.Module):
-    def __init__(self):
-        super(ChessNet, self).__init__()
-        self.conv1 = torch.nn.Conv2d(12, 64, kernel_size=3, padding=1)
-        self.conv2 = torch.nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.conv3 = torch.nn.Conv2d(128, 256, kernel_size=3, padding=1)
-        
-        self.fc1 = torch.nn.Linear(256 * 8 * 8, 512)
-        self.fc2 = torch.nn.Linear(512, 256)
-        self.fc3 = torch.nn.Linear(256, 64 * 64)
-        
-        self.dropout = torch.nn.Dropout(0.3)
-        
-    def forward(self, x):
-        x = torch.relu(self.conv1(x))
-        x = torch.relu(self.conv2(x))
-        x = torch.relu(self.conv3(x))
-        
-        x = x.view(-1, 256 * 8 * 8)
-        x = torch.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
-        
-        return x.view(-1, 64, 64)
-
-class ChessAI:
-    def __init__(self, model_path=None):
-        self.model = ChessNet()
-        if model_path:
-            self.model.load_state_dict(torch.load(model_path, map_location='cpu'))
-        self.model.eval()
-        
-    def board_to_tensor(self, board):
-        tensor = torch.zeros(12, 8, 8)
-        
-        piece_types = {
-            'Pawn': 0, 'Knight': 1, 'Bishop': 2,
-            'Rook': 3, 'Queen': 4, 'King': 5
-        }
-        
-        for x in range(8):
-            for y in range(8):
-                piece = board.board[x][y]
-                if piece:
-                    channel = piece_types[piece.name]
-                    if piece.color == 'b':
-                        channel += 6
-                    tensor[channel, x, y] = 1
-                    
-        return tensor.unsqueeze(0)
-
-    def get_move(self, board):
-        board_tensor = self.board_to_tensor(board)
-        with torch.no_grad():
-            move_probs = self.model(board_tensor)
-        
-        possible_moves = {}
-        for piece in board.get_curr_player_pieces():
-            moves = board.get_poss_moves_for(piece)
-            if moves:
-                possible_moves[piece.position] = moves
-        
-        move_scores = {}
-        for from_pos in possible_moves:
-            for to_pos in possible_moves[from_pos]:
-                from_idx = from_pos[0] * 8 + from_pos[1]
-                to_idx = to_pos[0] * 8 + to_pos[1]
-                score = move_probs[0, from_idx, to_idx].item()
-                move_scores[(from_pos, to_pos)] = score
-        
-        if not move_scores:
-            return None
-            
-        best_move = max(move_scores, key=move_scores.get)
-        return best_move
 
 class Game:
-    def __init__(self, ai_enabled=False, ai_model_path=None):
+    def __init__(self):
         pygame.init()
         self.game_display = pygame.display.set_mode((600, 600))
         pygame.display.set_caption('Chess')
@@ -102,26 +25,16 @@ class Game:
         self.white_pieces_taken_images = []
         self.black_pieces_taken_images = []
 
-        # AI settings
-        self.ai_enabled = ai_enabled
-        self.ai = ChessAI(ai_model_path) if ai_enabled else None
-        self.ai_thinking = False
-
         self.play_game()
 
     def play_game(self):
         """Loop that executes the game"""
         while True:
-            # AI move if it's AI's turn
-            if (self.ai_enabled and 
-                self.chess_board.curr_player == 'b' and 
-                not self.ai_thinking):
-                self.ai_thinking = True
-                self.make_ai_move()
-                self.ai_thinking = False
 
             # Draw whole window (and draw board)
             self.draw_window()
+
+            #pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -131,70 +44,19 @@ class Game:
                     if event.key == pygame.K_RETURN:
                         command_move = input('Введите команду:')
                         self.get_valid_command(command_move)
-                    elif event.key == pygame.K_a:
-                        # Toggle AI
-                        self.ai_enabled = not self.ai_enabled
-                        if self.ai_enabled and not self.ai:
-                            self.ai = ChessAI()
 
-                if event.type == pygame.MOUSEBUTTONUP and not self.ai_thinking:
-                    # Get user click only if it's human's turn or AI is disabled
-                    if not self.ai_enabled or self.chess_board.curr_player == 'w':
-                        self.get_user_click()
+                if event.type == pygame.MOUSEBUTTONUP:
+                    # Get user click
+                    self.get_user_click()
 
+            # pygame.display.flip()
             self.clock.tick(60)
-
-    def make_ai_move(self):
-        """Make a move using AI"""
-        if not self.ai:
-            return
-
-        move = self.ai.get_move(self.chess_board)
-        if move:
-            from_pos, to_pos = move
-            piece = self.chess_board.get_piece_at(from_pos)
-            
-            if piece and self.is_piece_of_curr_player(from_pos):
-                self.new_piece_selected(from_pos)
-                
-                if to_pos in self.curr_poss_moves:
-                    # Handle castling
-                    if piece.name == 'King' and to_pos in self.chess_board.get_castle_moves_for_curr_player():
-                        self.add_move(piece.position, to_pos)
-                        self.chess_board.castle_king(piece, to_pos)
-                    else:
-                        # Regular move
-                        self.add_move(piece.position, to_pos)
-                        self.move_piece(piece, to_pos)
-
-                        # Pawn promotion
-                        if piece.name == 'Pawn' and (to_pos[1] == 0 or to_pos[1] == 7):
-                            self.chess_board.board[to_pos[0]][to_pos[1]] = None
-                            self.chess_board.board[to_pos[0]][to_pos[1]] = Queen(self.chess_board.curr_player, to_pos)
-
-                    self.deselect_piece()
-                    self.change_curr_player()
-                    self.all_poss_moves = self.get_all_poss_moves()
-                    
-                    # Check for checkmate
-                    self.check_checkmate()
 
     def draw_window(self):
         """Draws everything in the window"""
         self.game_display.fill(white)
         # Draw board
         self.draw_board()
-        
-        # Display AI status
-        font = pygame.font.Font(None, 36)
-        ai_text = f"AI: {'ON' if self.ai_enabled else 'OFF'}"
-        text_surface = font.render(ai_text, True, black)
-        self.game_display.blit(text_surface, (10, 10))
-        
-        if self.ai_thinking:
-            thinking_text = font.render("AI Thinking...", True, red)
-            self.game_display.blit(thinking_text, (10, 50))
-        
         pygame.display.update()
 
     def draw_board(self):
@@ -209,32 +71,18 @@ class Game:
             piece_image = pygame.image.load(piece.image)
             self.game_display.blit(piece_image, image_position)
 
-        # Highlight selected piece and possible moves
+        # Determine if piece is currently selected
+        # If yes:
         if self.curr_selected_piece:
+            # Highlight that piece
             box_x, box_y = self.convert_space_to_coordinates(self.curr_selected_piece.position)
             pygame.draw.rect(self.game_display, blue, Rect((box_x, box_y), (75, 75)), 5)
-            
+            # Display possible moves for that piece
             for move in self.curr_poss_moves:
                 box1_x, box1_y = self.convert_space_to_coordinates(move)
                 pygame.draw.rect(self.game_display, red, Rect((box1_x, box1_y), (75, 75)), 5)
 
-    def check_checkmate(self):
-        """Check for checkmate and display message if game over"""
-        checkmate = True
-        for piece_pos in self.all_poss_moves:
-            if len(self.all_poss_moves[piece_pos]) != 0:
-                checkmate = False
-                
-        if checkmate:
-            self.draw_window()
-            self.message_display('Checkmate!', (300, 300))
-            winner = 'White' if self.chess_board.curr_player == 'b' else 'Black'
-            self.message_display(f'{winner} wins!', (300, 400))
-            pygame.display.update()
-            time.sleep(5)
-            quit()
-
-    def get_valid_command(self, command):
+    def get_valid_command(self, command): # command = "3 1,3 3"
         square_piece_from = tuple(map(lambda x: int(x), command.split(',')[0].split())) # [3, 1]
         square_piece_to = tuple(map(lambda x: int(x), command.split(',')[1].split()))
         print(square_piece_from, square_piece_to)
@@ -279,6 +127,7 @@ class Game:
         else:
             # Deselect current move
             self.deselect_piece()
+
 
     def get_user_click(self):
         """Analyze the position clicked by the user."""
@@ -362,7 +211,6 @@ class Game:
         # NOTE: Board is drawn upside down, so y axis is flipped
         return x // 75, 7 - y // 75
 
-
     def convert_space_to_coordinates(self, position):
         """Returns the top left corner coordinate corresponding to given chess spot"""
         return position[0] * 75, (7 - position[1]) * 75
@@ -439,10 +287,9 @@ class Game:
         self.game_display.blit(text_surface, text_rect)
 
 if __name__ == '__main__':
+
     white = (232, 230, 202)
     blue = (34, 0, 255)
     red = (209, 9, 9)
     black = (0, 0, 0)
-    
-    # Запуск игры с ИИ
-    Game(ai_enabled=True, ai_model_path='chess_model_final.pth')
+    Game()

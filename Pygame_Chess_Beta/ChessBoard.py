@@ -216,3 +216,81 @@ class ChessBoard:
             self.board[move[0]][move[1]] = piece_at_move_pos
 
         return poss_moves
+    
+    def to_fen(self):
+        """
+        Конвертирует текущее состояние твоей доски в FEN.
+        Важно: y=0 — нижний ряд белых, y=7 — верхний ряд чёрных,
+        поэтому FEN собираем по y=7..0.
+        """
+        piece_map = {
+            "Pawn": "p",
+            "Knight": "n",
+            "Bishop": "b",
+            "Rook": "r",
+            "Queen": "q",
+            "King": "k",
+        }
+
+        # 1) pieces placement
+        rows = []
+        for y in range(7, -1, -1):
+            empty = 0
+            row = ""
+            for x in range(8):
+                p = self.board[x][y]
+                if not p:
+                    empty += 1
+                    continue
+                if empty:
+                    row += str(empty)
+                    empty = 0
+                c = piece_map.get(p.name)
+                if c is None:
+                    raise ValueError(f"Unknown piece name: {p.name}")
+                row += c.upper() if p.color == "w" else c
+            if empty:
+                row += str(empty)
+            rows.append(row)
+        placement = "/".join(rows)
+
+        # 2) active color
+        active = "w" if self.curr_player == "w" else "b"
+
+        # 3) castling rights (грубо, но корректно по has_moved)
+        castling = self._fen_castling_rights()
+        if castling == "":
+            castling = "-"
+
+        # 4) en passant
+        ep = "-"
+
+        # 5) halfmove/fullmove (можно держать константами)
+        halfmove = "0"
+        fullmove = "1"
+
+        return f"{placement} {active} {castling} {ep} {halfmove} {fullmove}"
+
+    def _fen_castling_rights(self):
+        rights = ""
+        # белые: король e1 (4,0), ладьи a1 (0,0), h1 (7,0)
+        wk = self.get_piece_at((4, 0))
+        if wk and wk.name == "King" and wk.color == "w" and not wk.has_moved:
+            wr_a = self.get_piece_at((0, 0))
+            wr_h = self.get_piece_at((7, 0))
+            if wr_h and wr_h.name == "Rook" and wr_h.color == "w" and not wr_h.has_moved:
+                rights += "K"
+            if wr_a and wr_a.name == "Rook" and wr_a.color == "w" and not wr_a.has_moved:
+                rights += "Q"
+
+        # чёрные: король e8 (4,7), ладьи a8 (0,7), h8 (7,7)
+        bk = self.get_piece_at((4, 7))
+        if bk and bk.name == "King" and bk.color == "b" and not bk.has_moved:
+            br_a = self.get_piece_at((0, 7))
+            br_h = self.get_piece_at((7, 7))
+            if br_h and br_h.name == "Rook" and br_h.color == "b" and not br_h.has_moved:
+                rights += "k"
+            if br_a and br_a.name == "Rook" and br_a.color == "b" and not br_a.has_moved:
+                rights += "q"
+
+        return rights

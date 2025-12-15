@@ -3,88 +3,12 @@ from pygame.locals import *
 import time
 from pieces.Queen import Queen
 from ChessBoard import ChessBoard
-import torch
-import numpy as np
 
-class ChessNet(torch.nn.Module):
-    def __init__(self):
-        super(ChessNet, self).__init__()
-        self.conv1 = torch.nn.Conv2d(12, 64, kernel_size=3, padding=1)
-        self.conv2 = torch.nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.conv3 = torch.nn.Conv2d(128, 256, kernel_size=3, padding=1)
-        
-        self.fc1 = torch.nn.Linear(256 * 8 * 8, 512)
-        self.fc2 = torch.nn.Linear(512, 256)
-        self.fc3 = torch.nn.Linear(256, 64 * 64)
-        
-        self.dropout = torch.nn.Dropout(0.3)
-        
-    def forward(self, x):
-        x = torch.relu(self.conv1(x))
-        x = torch.relu(self.conv2(x))
-        x = torch.relu(self.conv3(x))
-        
-        x = x.view(-1, 256 * 8 * 8)
-        x = torch.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
-        
-        return x.view(-1, 64, 64)
+from ML import EngineAI, DirectionRules
 
-class ChessAI:
-    def __init__(self, model_path=None):
-        self.model = ChessNet()
-        if model_path:
-            self.model.load_state_dict(torch.load(model_path, map_location='cpu'))
-        self.model.eval()
-        
-    def board_to_tensor(self, board):
-        tensor = torch.zeros(12, 8, 8)
-        
-        piece_types = {
-            'Pawn': 0, 'Knight': 1, 'Bishop': 2,
-            'Rook': 3, 'Queen': 4, 'King': 5
-        }
-        
-        for x in range(8):
-            for y in range(8):
-                piece = board.board[x][y]
-                if piece:
-                    channel = piece_types[piece.name]
-                    if piece.color == 'b':
-                        channel += 6
-                    tensor[channel, x, y] = 1
-                    
-        return tensor.unsqueeze(0)
-
-    def get_move(self, board):
-        board_tensor = self.board_to_tensor(board)
-        with torch.no_grad():
-            move_probs = self.model(board_tensor)
-        
-        possible_moves = {}
-        for piece in board.get_curr_player_pieces():
-            moves = board.get_poss_moves_for(piece)
-            if moves:
-                possible_moves[piece.position] = moves
-        
-        move_scores = {}
-        for from_pos in possible_moves:
-            for to_pos in possible_moves[from_pos]:
-                from_idx = from_pos[0] * 8 + from_pos[1]
-                to_idx = to_pos[0] * 8 + to_pos[1]
-                score = move_probs[0, from_idx, to_idx].item()
-                move_scores[(from_pos, to_pos)] = score
-        
-        if not move_scores:
-            return None
-            
-        best_move = max(move_scores, key=move_scores.get)
-        return best_move
 
 class Game:
-    def __init__(self, ai_enabled=False, ai_model_path=None):
+    def __init__(self, ai_enabled=False, engine_path=None):
         pygame.init()
         self.game_display = pygame.display.set_mode((600, 600))
         pygame.display.set_caption('Chess')
@@ -93,29 +17,46 @@ class Game:
         self.board_image = pygame.image.load(self.settings['board_image'])
 
         self.clock = pygame.time.Clock()
+
+        # сначала создаём доску
         self.chess_board = ChessBoard()
 
+        # остальное состояние игры
         self.curr_selected_piece = None
         self.curr_poss_moves = []
         self.all_poss_moves = self.get_all_poss_moves()
 
+        # флаги AI
+        self.ai_enabled = ai_enabled
+        self.ai_thinking = False
+
+        # rules (если используем)
+        # “Односторонний мир”: AI может ходить только вниз (для чёрных) + диагональ вниз.
+        # “Только горизонталь”: разрешены (±1,0) — AI гоняет фигуры по линиям.
+        # “Только диагонали”: разрешены (±1,±1) — резко меняет стиль.
+        # “Запрет отступления”: для чёрных запрещаешь dy>0 (нельзя “назад”), для белых запрещаешь dy<0.
+        # Персональные правила по типу фигуры: пешкам одно, слонам другое (легко расширить DirectionRules.is_allowed()).
+
+        self.ai_rules_black = DirectionRules(
+            allowed_vectors={(0, -1), (-1, 0), (1, 0), (-1, -1), (1, -1)},
+            allow_knight=True
+        )
+        self.ai_rules_white = None
+
         self.white_pieces_taken_images = []
         self.black_pieces_taken_images = []
 
-        # AI settings
-        self.ai_enabled = ai_enabled
-        self.ai = ChessAI(ai_model_path) if ai_enabled else None
-        self.ai_thinking = False
+        # движок
+        self.ai = EngineAI(engine_path, movetime_ms=150) if (ai_enabled and engine_path) else None
 
+        # запускаем цикл
         self.play_game()
 
     def play_game(self):
         """Loop that executes the game"""
         while True:
             # AI move if it's AI's turn
-            if (self.ai_enabled and 
-                self.chess_board.curr_player == 'b' and 
-                not self.ai_thinking):
+            if (self.ai_enabled and self.chess_board.curr_player == 'b' and not self.ai_thinking):
                 self.ai_thinking = True
                 self.make_ai_move()
                 self.ai_thinking = False
@@ -145,39 +86,42 @@ class Game:
             self.clock.tick(60)
 
     def make_ai_move(self):
-        """Make a move using AI"""
         if not self.ai:
             return
 
-        move = self.ai.get_move(self.chess_board)
-        if move:
-            from_pos, to_pos = move
-            piece = self.chess_board.get_piece_at(from_pos)
-            
-            if piece and self.is_piece_of_curr_player(from_pos):
-                self.new_piece_selected(from_pos)
-                
-                if to_pos in self.curr_poss_moves:
-                    # Handle castling
-                    if piece.name == 'King' and to_pos in self.chess_board.get_castle_moves_for_curr_player():
-                        self.add_move(piece.position, to_pos)
-                        self.chess_board.castle_king(piece, to_pos)
-                    else:
-                        # Regular move
-                        self.add_move(piece.position, to_pos)
-                        self.move_piece(piece, to_pos)
+        # легальные ходы
+        self.all_poss_moves = self.get_all_poss_moves()
 
-                        # Pawn promotion
-                        if piece.name == 'Pawn' and (to_pos[1] == 0 or to_pos[1] == 7):
-                            self.chess_board.board[to_pos[0]][to_pos[1]] = None
-                            self.chess_board.board[to_pos[0]][to_pos[1]] = Queen(self.chess_board.curr_player, to_pos)
+        rules = self.ai_rules_black if self.chess_board.curr_player == 'b' else self.ai_rules_white
 
-                    self.deselect_piece()
-                    self.change_curr_player()
-                    self.all_poss_moves = self.get_all_poss_moves()
-                    
-                    # Check for checkmate
-                    self.check_checkmate()
+        move = self.ai.choose_move(self.chess_board, self.all_poss_moves, rules=rules)
+        if not move:
+            return
+
+        from_pos, to_pos = move
+        piece = self.chess_board.get_piece_at(from_pos)
+        if not piece:
+            return
+
+        # логика применения хода
+        self.new_piece_selected(from_pos)
+
+        if to_pos in self.curr_poss_moves:
+            if piece.name == 'King' and to_pos in self.chess_board.get_castle_moves_for_curr_player():
+                self.add_move(piece.position, to_pos)
+                self.chess_board.castle_king(piece, to_pos)
+            else:
+                self.add_move(piece.position, to_pos)
+                self.move_piece(piece, to_pos)
+
+                if piece.name == 'Pawn' and (to_pos[1] == 0 or to_pos[1] == 7):
+                    self.chess_board.board[to_pos[0]][to_pos[1]] = None
+                    self.chess_board.board[to_pos[0]][to_pos[1]] = Queen(self.chess_board.curr_player, to_pos)
+
+            self.deselect_piece()
+            self.change_curr_player()
+            self.all_poss_moves = self.get_all_poss_moves()
+            self.check_checkmate()
 
     def draw_window(self):
         """Draws everything in the window"""
@@ -443,6 +387,5 @@ if __name__ == '__main__':
     blue = (34, 0, 255)
     red = (209, 9, 9)
     black = (0, 0, 0)
-    
-    # Запуск игры с ИИ
-    Game(ai_enabled=True, ai_model_path='chess_model_final.pth')
+
+    Game(ai_enabled=True, engine_path="engines/stockfish/stockfish-windows-x86-64-avx2.exe") # путь к бинарнику движка

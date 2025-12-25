@@ -219,9 +219,8 @@ class ChessBoard:
     
     def to_fen(self):
         """
-        Конвертирует текущее состояние твоей доски в FEN.
-        Важно: y=0 — нижний ряд белых, y=7 — верхний ряд чёрных,
-        поэтому FEN собираем по y=7..0.
+        Конвертируем текущее состояние доски в FEN.
+        y=0 — нижний ряд белых, y=7 — верхний ряд чёрных, поэтому FEN собираем по y=7....0
         """
         piece_map = {
             "Pawn": "p",
@@ -257,7 +256,7 @@ class ChessBoard:
         # 2) active color
         active = "w" if self.curr_player == "w" else "b"
 
-        # 3) castling rights (грубо, но корректно по has_moved)
+        # 3) castling rights
         castling = self._fen_castling_rights()
         if castling == "":
             castling = "-"
@@ -265,7 +264,7 @@ class ChessBoard:
         # 4) en passant
         ep = "-"
 
-        # 5) halfmove/fullmove (можно держать константами)
+        # 5) halfmove/fullmove (константы)
         halfmove = "0"
         fullmove = "1"
 

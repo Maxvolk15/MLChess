@@ -14,7 +14,7 @@ class DirectionRules:
     """
     Ограничения по направлениям в терминах вектора (dx, dy) в твоих координатах.
     dy>0 — "вверх" (для белых вперёд), dy<0 — "вниз" (для чёрных вперёд).
-    Если allow_knight=True — коней НЕ режем по направлению (часто так удобнее).
+    Если allow_knight=True — коней не режем по направлению.
     """
     allowed_vectors: Set[Tuple[int, int]]
     allow_knight: bool = True
@@ -42,15 +42,14 @@ def _normalize_direction(dx: int, dy: int) -> Tuple[int, int]:
     # диагональ (для слонов/ферзей):
     if abs(dx) == abs(dy):
         return (1 if dx > 0 else -1, 1 if dy > 0 else -1)
-    # “нестандартный” (например, ход коня) — оставим как есть
+    # “нестандартный” (ход коня) — оставим как есть
     return (dx, dy)
 
 
 class EngineAI:
     """
     Обёртка над UCI-движком (Stockfish или Lc0).
-    Мы НЕ генерим ходы через python-chess, потому что у тебя свои правила/логика.
-    Мы берём легальные ходы из твоего движка -> фильтруем -> просим UCI выбрать лучший.
+    Мы берём легальные ходы из движка -> фильтруем -> просим UCI выбрать лучший.
     """
     def __init__(self, engine_path: str, movetime_ms: int = 150, threads: int = 1, hash_mb: int = 128):
         self.engine_path = engine_path
@@ -70,11 +69,7 @@ class EngineAI:
 
     def choose_move(self, chess_board, legal_moves: Dict[Tuple[int, int], List[Tuple[int, int]]],
                     rules: Optional[DirectionRules] = None) -> Optional[BoardMove]:
-        """
-        chess_board: твой ChessBoard
-        legal_moves: как у тебя в Game.get_all_poss_moves(): {from_pos: [to_pos,...]}
-        rules: DirectionRules
-        """
+        
         fen = chess_board.to_fen()
         b = chess.Board(fen)
 
@@ -90,8 +85,7 @@ class EngineAI:
                     continue
                 uci = self._to_uci(from_pos, to_pos)
                 mv = chess.Move.from_uci(uci)
-                # Очень важно: ход должен быть легален и по FEN-представлению,
-                # иначе движок не сможет его анализировать.
+                # Очень важно: ход должен быть легален и по FEN-представлению, иначе движок не сможет его анализировать.
                 if mv in b.legal_moves:
                     root_moves.append(mv)
 
@@ -100,7 +94,7 @@ class EngineAI:
 
         limit = chess.engine.Limit(time=self.movetime_ms / 1000.0)
 
-        # Ключевой трюк: ограничиваем выбор движка только root_moves
+        # ограничиваем выбор движка только root_moves
         result = self.engine.play(b, limit, root_moves=root_moves)
         best = result.move
         if best is None:
@@ -110,7 +104,7 @@ class EngineAI:
 
     @staticmethod
     def _to_uci(from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> str:
-        # твои координаты: x=0..7 => a..h, y=0..7 => rank 1..8
+        # координаты
         def sq(p):
             file_char = "abcdefgh"[p[0]]
             rank_char = str(p[1] + 1)
